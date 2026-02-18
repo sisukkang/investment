@@ -1,61 +1,76 @@
+# =================================================================
+# [한/미 국채 금리 장기 추이 시각화 도구]
+# 실행 전 터미널에서 아래 명령어를 입력하여 라이브러리를 설치하세요:
+# pip install finance-datareader matplotlib pandas
+# =================================================================
+
 import FinanceDataReader as fdr
 import matplotlib.pyplot as plt
+import pandas as pd
 from datetime import datetime
 
-# 1. 오늘 날짜 설정 (조회 시점 기준)
-today = datetime.now().strftime('%Y-%m-%d')
-# 데이터가 있는 아주 먼 과거부터 수집하도록 설정
-start_date = '1970-01-01' 
+def run_bond_analysis():
+    # 1. 기간 설정 (데이터 시작 시점부터 오늘까지)
+    today = datetime.now().strftime('%Y-%m-%d')
+    start_date = '1900-01-01'  # 아주 먼 과거로 설정하여 전체 데이터를 가져옴
 
-print(f"데이터 수집 중: 전체 기간 ~ {today}")
+    print(f"📊 데이터를 불러오는 중입니다... (기준일: {today})")
 
-# 2. 데이터 심볼 설정
-# KR3YT=RR (한국 3년물), KR10YT=RR (한국 10년물)
-# US2YT=RR (미국 2년물), US10YT=RR (미국 10년물)
-symbols = {
-    'KR 3Y': 'KR3YT=RR',
-    'KR 10Y': 'KR10YT=RR',
-    'US 2Y': 'US2YT=RR',
-    'US 10Y': 'US10YT=RR'
-}
+    # 2. 수집 대상 심볼 (Investing.com 데이터 소스 활용)
+    symbols = {
+        'KR 3Y': 'KR3YT=RR',   # 한국 국채 3년물 수익률
+        'KR 10Y': 'KR10YT=RR', # 한국 국채 10년물 수익률
+        'US 2Y': 'US2YT=RR',   # 미국 국채 2년물 수익률
+        'US 10Y': 'US10YT=RR'  # 미국 국채 10년물 수익률
+    }
 
-# 3. 데이터 로드 및 결합
-data_list = []
-for name, symbol in symbols.items():
-    try:
-        df = fdr.DataReader(symbol, start_date, today)['Close']
-        df.name = name
-        data_list.append(df)
-        print(f"✅ {name}: {df.index[0].date()}부터 데이터 로드 완료")
-    except Exception as e:
-        print(f"❌ {name} 데이터를 불러오지 못했습니다: {e}")
+    # 3. 데이터 로드 및 통합
+    yield_df = pd.DataFrame()
 
-# 모든 데이터를 날짜 기준으로 병합 (데이터가 없는 날은 NaN 처리)
-full_df = pd.concat(data_list, axis=1)
+    for name, symbol in symbols.items():
+        try:
+            # 데이터 수집
+            temp_df = fdr.DataReader(symbol, start_date, today)['Close']
+            temp_df.name = name
+            # 기존 데이터와 날짜 기준으로 병합
+            yield_df = pd.concat([yield_df, temp_df], axis=1)
+            print(f"✅ {name}: 로드 완료 (시작일: {temp_df.index[0].date()})")
+        except Exception as e:
+            print(f"❌ {name} 로드 실패: {e}")
 
-# 4. 그래프 그리기
-plt.figure(figsize=(15, 8))
+    # 4. 시각화 설정 (하나의 파일 내에서 모든 설정 완료)
+    plt.figure(figsize=(15, 8))
+    plt.style.use('bmh') # 깔끔한 시각화 스타일
 
-# 한국 국채 (파란색 계열)
-if 'KR 3Y' in full_df:
-    plt.plot(full_df.index, full_df['KR 3Y'], label='South Korea 3Y', color='#1f77b4', alpha=0.8)
-if 'KR 10Y' in full_df:
-    plt.plot(full_df.index, full_df['KR 10Y'], label='South Korea 10Y', color='#000080', linestyle='--', alpha=0.8)
+    # 한국 국채 (Blue 계열)
+    if 'KR 3Y' in yield_df.columns:
+        plt.plot(yield_df.index, yield_df['KR 3Y'], label='South Korea 3Y', color='#3498db', linewidth=1.2)
+    if 'KR 10Y' in yield_df.columns:
+        plt.plot(yield_df.index, yield_df['KR 10Y'], label='South Korea 10Y', color='#2c3e50', linewidth=2, linestyle='--')
 
-# 미국 국채 (빨간색 계열)
-if 'US 2Y' in full_df:
-    plt.plot(full_df.index, full_df['US 2Y'], label='US 2Y', color='#d62728', alpha=0.8)
-if 'US 10Y' in full_df:
-    plt.plot(full_df.index, full_df['US 10Y'], label='US 10Y', color='#800000', linestyle='--', alpha=0.8)
+    # 미국 국채 (Red 계열)
+    if 'US 2Y' in yield_df.columns:
+        plt.plot(yield_df.index, yield_df['US 2Y'], label='US 2Y', color='#e74c3c', linewidth=1.2)
+    if 'US 10Y' in yield_df.columns:
+        plt.plot(yield_df.index, yield_df['US 10Y'], label='US 10Y', color='#8b0000', linewidth=2, linestyle='--')
 
-# 차트 디테일
-plt.title(f'Historical Trend: KR & US Government Bond Yields (Up to {today})', fontsize=16, fontweight='bold')
-plt.xlabel('Year', fontsize=12)
-plt.ylabel('Yield (%)', fontsize=12)
-plt.legend(loc='best')
-plt.grid(True, linestyle=':', alpha=0.6)
+    # 차트 꾸미기
+    plt.title(f'Historical Bond Yields: South Korea vs US (Up to {today})', fontsize=16, fontweight='bold', pad=20)
+    plt.ylabel('Yield (%)', fontsize=12)
+    plt.xlabel('Year', fontsize=12)
+    plt.legend(loc='upper right', frameon=True, shadow=True)
+    plt.grid(True, linestyle=':', alpha=0.6)
 
-# 5. 저장 및 출력
-plt.tight_layout()
-plt.savefig('historical_bond_yields.png', dpi=300)
-plt.show()
+    # 5. 저장 및 출력
+    file_name = 'bond_yield_all_in_one.png'
+    plt.tight_layout()
+    plt.savefig(file_name, dpi=300)
+    
+    print("-" * 50)
+    print(f"✨ 분석 결과가 '{file_name}' 파일로 저장되었습니다.")
+    print("-" * 50)
+    
+    plt.show()
+
+if __name__ == "__main__":
+    run_bond_analysis()
