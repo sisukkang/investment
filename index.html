@@ -1,0 +1,61 @@
+import FinanceDataReader as fdr
+import matplotlib.pyplot as plt
+from datetime import datetime
+
+# 1. 오늘 날짜 설정 (조회 시점 기준)
+today = datetime.now().strftime('%Y-%m-%d')
+# 데이터가 있는 아주 먼 과거부터 수집하도록 설정
+start_date = '1970-01-01' 
+
+print(f"데이터 수집 중: 전체 기간 ~ {today}")
+
+# 2. 데이터 심볼 설정
+# KR3YT=RR (한국 3년물), KR10YT=RR (한국 10년물)
+# US2YT=RR (미국 2년물), US10YT=RR (미국 10년물)
+symbols = {
+    'KR 3Y': 'KR3YT=RR',
+    'KR 10Y': 'KR10YT=RR',
+    'US 2Y': 'US2YT=RR',
+    'US 10Y': 'US10YT=RR'
+}
+
+# 3. 데이터 로드 및 결합
+data_list = []
+for name, symbol in symbols.items():
+    try:
+        df = fdr.DataReader(symbol, start_date, today)['Close']
+        df.name = name
+        data_list.append(df)
+        print(f"✅ {name}: {df.index[0].date()}부터 데이터 로드 완료")
+    except Exception as e:
+        print(f"❌ {name} 데이터를 불러오지 못했습니다: {e}")
+
+# 모든 데이터를 날짜 기준으로 병합 (데이터가 없는 날은 NaN 처리)
+full_df = pd.concat(data_list, axis=1)
+
+# 4. 그래프 그리기
+plt.figure(figsize=(15, 8))
+
+# 한국 국채 (파란색 계열)
+if 'KR 3Y' in full_df:
+    plt.plot(full_df.index, full_df['KR 3Y'], label='South Korea 3Y', color='#1f77b4', alpha=0.8)
+if 'KR 10Y' in full_df:
+    plt.plot(full_df.index, full_df['KR 10Y'], label='South Korea 10Y', color='#000080', linestyle='--', alpha=0.8)
+
+# 미국 국채 (빨간색 계열)
+if 'US 2Y' in full_df:
+    plt.plot(full_df.index, full_df['US 2Y'], label='US 2Y', color='#d62728', alpha=0.8)
+if 'US 10Y' in full_df:
+    plt.plot(full_df.index, full_df['US 10Y'], label='US 10Y', color='#800000', linestyle='--', alpha=0.8)
+
+# 차트 디테일
+plt.title(f'Historical Trend: KR & US Government Bond Yields (Up to {today})', fontsize=16, fontweight='bold')
+plt.xlabel('Year', fontsize=12)
+plt.ylabel('Yield (%)', fontsize=12)
+plt.legend(loc='best')
+plt.grid(True, linestyle=':', alpha=0.6)
+
+# 5. 저장 및 출력
+plt.tight_layout()
+plt.savefig('historical_bond_yields.png', dpi=300)
+plt.show()
