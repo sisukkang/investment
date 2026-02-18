@@ -1,5 +1,4 @@
 streamlit
-finance-datareader
-yfinance
-plotly
+finance-datareader>=0.9.31
 pandas
+plotly
