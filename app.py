@@ -1,17 +1,16 @@
 import streamlit as st
 import FinanceDataReader as fdr
-import yfinance as yf
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-# 1. 페이지 설정
-st.set_page_config(page_title="한/미 국채 금리 모니터", layout="wide")
+# 1. 페이지 설정 및 제목
+st.set_page_config(page_title="한/미 국채 금리 모니터링", layout="wide")
 
 st.title("📈 한/미 국채 금리 실시간 대시보드")
-st.markdown("데이터 소스 안정성을 위해 이원화 수집 방식을 사용합니다. (FDR & yfinance)")
+st.markdown("데이터 소스 최적화 완료: 한국(Investing) / 미국(FRED - 연준 공식 데이터)")
 
-# 2. 데이터 로드 함수
+# 2. 데이터 수집 함수 (안정성 강화)
 @st.cache_data(ttl=3600)
 def fetch_bond_data():
     end_date = datetime.now()
@@ -20,29 +19,27 @@ def fetch_bond_data():
     df_final = pd.DataFrame()
     debug_info = []
 
-    # --- (1) 미국 국채 수집 (yfinance 사용 - Streamlit에서 더 안정적) ---
-    us_symbols = {'미국 10년': '^TNX', '미국 2년': '^IRX'} # ^IRX는 13주물이나 추세용으로 대체 가능
-    for name, sym in us_symbols.items():
-        try:
-            ticker = yf.Ticker(sym)
-            temp = ticker.history(start=start_date, end=end_date)['Close']
-            if not temp.empty:
-                # yfinance 금리는 10배로 나오는 경우가 있어 보정 (예: 4.5% -> 4.5)
-                if name == '미국 10년': 
-                    temp = temp # TNX는 그대로 사용
-                df_final[name] = temp
-                debug_info.append(f"✅ {name} 로드 완료 (yfinance)")
-        except Exception as e:
-            debug_info.append(f"❌ {name} 로드 실패: {e}")
-
-    # --- (2) 한국 국채 수집 (FinanceDataReader 사용) ---
+    # --- (1) 한국 국채 수집 (Investing 소스 강제 지정) ---
     kr_symbols = {'한국 3년': 'KR3YT=RR', '한국 10년': 'KR10YT=RR'}
     for name, sym in kr_symbols.items():
         try:
-            temp = fdr.DataReader(sym, start_date.strftime('%Y-%m-%d'))['Close']
+            # data_source='investing'을 명시하여 야후 파이낸스 404 에러를 방지합니다.
+            temp = fdr.DataReader(sym, start_date.strftime('%Y-%m-%d'), data_source='investing')['Close']
             if not temp.empty:
                 df_final[name] = temp
-                debug_info.append(f"✅ {name} 로드 완료 (FDR)")
+                debug_info.append(f"✅ {name} 로드 완료 (Investing)")
+        except Exception as e:
+            debug_info.append(f"❌ {name} 로드 실패: {e}")
+
+    # --- (2) 미국 국채 수집 (FRED - 연준 데이터 사용으로 안정성 극대화) ---
+    us_symbols = {'미국 2년': 'DGS2', '미국 10년': 'DGS10'}
+    for name, sym in us_symbols.items():
+        try:
+            # FRED 데이터를 직접 호출합니다.
+            temp = fdr.DataReader(sym, start_date.strftime('%Y-%m-%d'), data_source='fred')
+            if not temp.empty:
+                df_final[name] = temp.iloc[:, 0] # 첫 번째 열(금리)만 선택
+                debug_info.append(f"✅ {name} 로드 완료 (FRED)")
         except Exception as e:
             debug_info.append(f"❌ {name} 로드 실패: {e}")
 
@@ -51,39 +48,40 @@ def fetch_bond_data():
 # 데이터 실행
 data, logs = fetch_bond_data()
 
-# 3. 화면 구현
+# 3. 사이드바 진단 및 설정
 with st.sidebar:
-    st.header("🛠️ 시스템 진단")
+    st.header("🛠️ 시스템 진단 로그")
     for log in logs:
         st.write(log)
     
     if not data.empty:
         st.divider()
-        st.header("📅 기간 필터")
+        st.header("📅 조회 기간 설정")
         min_d, max_d = data.index.min().to_pydatetime(), data.index.max().to_pydatetime()
         selected_range = st.date_input("조회 범위", value=[min_d, max_d], min_value=min_d, max_value=max_d)
 
+# 4. 차트 출력
 if data.empty:
-    st.error("🚨 모든 데이터 소스에서 응답이 없습니다. 잠시 후 다시 시도해 주세요.")
-    st.info("전문가 팁: Streamlit Cloud 설정에서 'Reboot App'을 눌러 세션을 초기화해 보세요.")
+    st.error("🚨 데이터를 불러오지 못했습니다. 잠시 후 'Reboot App'을 실행해 주세요.")
 else:
-    # 차트 시각화
-    fig = go.Figure()
-    colors = {'한국 3년': '#3498db', '한국 10년': '#2c3e50', '미국 2년': '#e74c3c', '미국 10년': '#8b0000'}
-    
-    for col in data.columns:
-        fig.add_trace(go.Scatter(
-            x=data.index, y=data[col], name=col,
-            line=dict(color=colors.get(col, 'gray'), dash='dash' if '10년' in col else 'solid')
-        ))
+    if len(selected_range) == 2:
+        filtered_data = data.loc[selected_range[0]:selected_range[1]]
+        
+        fig = go.Figure()
+        colors = {'한국 3년': '#3498db', '한국 10년': '#2c3e50', '미국 2년': '#e74c3c', '미국 10년': '#8b0000'}
+        
+        for col in filtered_data.columns:
+            is_long = '10년' in col
+            fig.add_trace(go.Scatter(
+                x=filtered_data.index, y=filtered_data[col], name=col,
+                line=dict(color=colors.get(col, 'gray'), width=2, dash='dash' if is_long else 'solid')
+            ))
 
-    fig.update_layout(
-        hovermode="x unified", height=600,
-        xaxis_title="연도", yaxis_title="금리 (%)",
-        legend=dict(orientation="h", y=1.05, x=1, xanchor="right")
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    
-    st.dataframe(data.tail(10), use_container_width=True)
+        fig.update_layout(
+            hovermode="x unified", height=650, template="plotly_white",
+            xaxis_title="연도", yaxis_title="금리 (%)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
-st.caption(f"최종 업데이트 (UTC): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+st.caption(f"최종 업데이트 (KST): {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
